@@ -1,69 +1,156 @@
 import pandas as pd
 import os
+import joblib
 
 # =========================
-# 1. LOAD DATASET
+# LOAD DATA
 # =========================
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-data_path = os.path.join(BASE_DIR, "data", "jobs.csv")
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+data_path = os.path.join(base_dir, "data", "jobs.csv")
 
 df = pd.read_csv(data_path)
-
 print("Original shape:", df.shape)
 
-
 # =========================
-# 2. KEEP ONLY USEFUL COLUMNS
+# SELECT USEFUL COLUMNS
 # =========================
 
 df = df[[
     "job_title",
+    "company_type",
+    "industry",
+    "country",
+    "city",
+    "remote_type",
     "experience_level",
-    "salary_in_usd",
-    "company_location"
+    "min_experience_years",
+    "salary_min_usd",
+    "salary_max_usd",
+    "employment_type",
+    "company_size"
 ]]
 
 print("After selecting columns:", df.shape)
 
-
 # =========================
-# 3. REMOVE MISSING VALUES
-# =========================
-
-df = df.dropna()
-
-print("After removing nulls:", df.shape)
-
-
-# =========================
-# 4. FILTER ONLY DATA JOBS
+# REMOVE MISSING CRITICAL VALUES
 # =========================
 
-def is_data_job(title):
-    keywords = ["Data", "ML", "Machine Learning", "Analytics"]
-    return any(keyword.lower() in title.lower() for keyword in keywords)
+df = df.dropna(subset=[
+    "job_title",
+    "industry",
+    "remote_type",
+    "min_experience_years",
+    "salary_min_usd",
+    "salary_max_usd"
+])
 
-df = df[df["job_title"].apply(is_data_job)]
+# keep country but allow fallback
+df["country"] = df["country"].fillna("Unknown")
 
-print("After filtering roles:", df.shape)
-
+print("After dropna:", df.shape)
 
 # =========================
-# 5. REMOVE OUTLIERS (SALARY)
+# CREATE TARGET (SALARY)
 # =========================
 
-# Remove very low and very high salaries
-df = df[(df["salary_in_usd"] > 10000) & (df["salary_in_usd"] < 300000)]
+df["salary"] = (df["salary_min_usd"] + df["salary_max_usd"]) / 2
 
+# =========================
+# REMOVE OUTLIERS
+# =========================
+
+df = df[(df["salary"] > 20000) & (df["salary"] < 400000)]
 print("After removing outliers:", df.shape)
 
+# =========================
+# CLEAN TEXT
+# =========================
+
+text_cols = [
+    "job_title",
+    "company_type",
+    "industry",
+    "country",
+    "city",
+    "remote_type",
+    "experience_level",
+    "employment_type",
+    "company_size"
+]
+
+for col in text_cols:
+    df[col] = df[col].astype(str).str.strip()
 
 # =========================
-# 6. SAVE CLEANED DATASET
+# NORMALIZE COUNTRY
 # =========================
 
-output_path = os.path.join(BASE_DIR, "data", "cleaned_jobs.csv")
+def normalize_country(c):
+    c = str(c).lower()
+
+    if "united states" in c or c in ["us", "usa"]:
+        return "USA"
+    elif "united kingdom" in c or c == "uk":
+        return "UK"
+    elif "canada" in c:
+        return "Canada"
+    elif "germany" in c:
+        return "Germany"
+    elif "france" in c:
+        return "France"
+    else:
+        return c.title()
+
+df["country"] = df["country"].apply(normalize_country)
+
+# =========================
+# HANDLE CITY
+# =========================
+
+df["city"] = df["city"].fillna("Unknown")
+
+# =========================
+# CLEAN EXPERIENCE
+# =========================
+
+df["min_experience_years"] = pd.to_numeric(
+    df["min_experience_years"], errors="coerce"
+)
+
+df["min_experience_years"] = df["min_experience_years"].fillna(0)
+df["min_experience_years"] = df["min_experience_years"].clip(0, 20)
+
+# =========================
+# DROP UNUSED COLUMNS
+# =========================
+
+df = df.drop(columns=[
+    "salary_min_usd",
+    "salary_max_usd",
+    "experience_level"  # redundant
+])
+
+# =========================
+# SAVE CLEAN DATA
+# =========================
+
+output_path = os.path.join(base_dir, "data", "cleaned_jobs.csv")
 df.to_csv(output_path, index=False)
 
-print("Cleaned dataset saved at:", output_path)
+print("Saved cleaned dataset:", output_path)
+
+# =========================
+# SAVE COUNTRIES FOR API
+# =========================
+
+model_dir = os.path.join(base_dir, "model")
+os.makedirs(model_dir, exist_ok=True)
+
+joblib.dump(
+    df["country"].unique().tolist(),
+    os.path.join(model_dir, "countries.pkl")
+)
+
+print("Saved countries list for API.")
