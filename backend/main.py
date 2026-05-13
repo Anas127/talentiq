@@ -159,6 +159,120 @@ def normalize_job_title(title):
         return "Data Scientist"
 
 
+# =========================
+# DYNAMIC INFERENCE
+# =========================
+
+def infer_company_size(
+    years,
+    title
+):
+
+    title = str(title).lower()
+
+    # senior roles
+
+    if (
+
+        "lead" in title
+        or
+        "principal" in title
+        or
+        "architect" in title
+        or
+        "director" in title
+        or
+        "head" in title
+
+    ):
+
+        return "Large"
+
+    # experience heuristic
+
+    if years >= 8:
+        return "Large"
+
+    elif years >= 4:
+        return "Medium"
+
+    else:
+        return "Small"
+
+
+def infer_company_type(
+    years,
+    title
+):
+
+    title = str(title).lower()
+
+    if (
+        "architect" in title
+        or
+        "director" in title
+        or
+        years >= 10
+    ):
+
+        return "Enterprise"
+
+    elif years >= 4:
+
+        return "Scale-up"
+
+    else:
+
+        return "Startup"
+
+
+def infer_remote_type(
+    years
+):
+
+    # senior profiles more likely hybrid
+
+    if years >= 7:
+        return "Hybrid"
+
+    elif years >= 3:
+        return "Remote"
+
+    else:
+        return "Onsite"
+
+
+def infer_industry(title):
+
+    title = str(title).lower()
+
+    if (
+        "ml" in title
+        or
+        "ai" in title
+        or
+        "machine learning" in title
+    ):
+
+        return "Artificial Intelligence"
+
+    elif "analyst" in title:
+
+        return "Finance"
+
+    elif "engineer" in title:
+
+        return "Technology"
+
+    else:
+
+        return "Data"
+
+
+# =========================
+# ENRICHMENT
+# =========================
+
 def enrich_data(data):
 
     years = data.get(
@@ -170,25 +284,36 @@ def enrich_data(data):
         years,
         (int, float)
     ):
+
         years = 2
 
-    years = max(0, min(years, 20))
+    years = max(
+        0,
+        min(years, 20)
+    )
+
+    title = normalize_job_title(
+
+        data.get(
+            "job_title",
+            "Data Scientist"
+        )
+
+    )
 
     return {
 
         "job_title":
-        normalize_job_title(
-            data.get(
-                "job_title",
-                "Data Scientist"
-            )
-        ),
+        title,
 
         "company_type":
-        "Startup",
+        infer_company_type(
+            years,
+            title
+        ),
 
         "industry":
-        "Tech",
+        infer_industry(title),
 
         "country":
         data.get(
@@ -200,7 +325,7 @@ def enrich_data(data):
         "Unknown",
 
         "remote_type":
-        "Remote",
+        infer_remote_type(years),
 
         "min_experience_years":
         years,
@@ -209,7 +334,10 @@ def enrich_data(data):
         "Full-time",
 
         "company_size":
-        "Medium"
+        infer_company_size(
+            years,
+            title
+        )
     }
 
 # =========================
