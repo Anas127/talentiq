@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+﻿from fastapi import FastAPI, UploadFile, File, HTTPException
 import joblib
 import pandas as pd
 import os
@@ -76,22 +76,49 @@ def extract_text(file):
 def call_llm(text):
 
     prompt = f"""
-Extract structured data from this CV.
+Extract structured data from this CV for an academic AI salary analyzer.
 
 RULES:
 - Calculate TOTAL years of experience
 - Use job history dates
-- If current role → assume present = 2025
+- If current role is ongoing, assume present = 2026
 - Infer best matching job_title
-- Infer country if possible
+- Infer country and professional region if possible
+- Keep arrays short and useful
+- If a value is unknown, use "Unknown" or []
+- salary_reasoning must explain why the profile may receive a strong or weak salary prediction, but do not invent a salary amount
+- All generated text fields MUST be written in French
+- city must represent the candidate’s primary professional location
+- Do not use university names as city values
+- If the CV contains a university location, extract the real city/region instead
+- Infer whether education is completed or ongoing using dates
+- Do not label completed degrees as "en cours"
+- Do not use markdown
+- Do not wrap JSON in triple backticks
+- Ensure ALL fields are always present
+- Never infer languages from names, ethnicity, or nationality
+- English can be inferred if the CV is fully written in English
+- Never infer other languages from names, ethnicity, or nationality
+- Ensure profile_summary is fully consistent with inferred education completion status
 
 Return ONLY valid JSON.
 
 FORMAT:
 {{
+  "full_name": "string",
   "job_title": "string",
+  "seniority_level": "Junior | Mid-level | Senior | Lead",
   "min_experience_years": number,
-  "country": "string"
+  "country": "string",
+  "city": "string",
+  "skills": ["string"],
+  "education_level": "string",
+  "certifications": ["string"],
+  "languages": ["string"],
+  "strengths": ["string"],
+  "missing_keywords": ["string"],
+  "profile_summary": "string",
+  "salary_reasoning": "string"
 }}
 
 CV:
@@ -99,7 +126,7 @@ CV:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",
+        model="gpt-4.1",
         messages=[
             {
                 "role": "user",
@@ -162,84 +189,6 @@ def normalize_job_title(title):
 # =========================
 # DYNAMIC INFERENCE
 # =========================
-
-def infer_company_size(
-    years,
-    title
-):
-
-    title = str(title).lower()
-
-    # senior roles
-
-    if (
-
-        "lead" in title
-        or
-        "principal" in title
-        or
-        "architect" in title
-        or
-        "director" in title
-        or
-        "head" in title
-
-    ):
-
-        return "Large"
-
-    # experience heuristic
-
-    if years >= 8:
-        return "Large"
-
-    elif years >= 4:
-        return "Medium"
-
-    else:
-        return "Small"
-
-
-def infer_company_type(
-    years,
-    title
-):
-
-    title = str(title).lower()
-
-    if (
-        "architect" in title
-        or
-        "director" in title
-        or
-        years >= 10
-    ):
-
-        return "Enterprise"
-
-    elif years >= 4:
-
-        return "Scale-up"
-
-    else:
-
-        return "Startup"
-
-
-def infer_remote_type(
-    years
-):
-
-    # senior profiles more likely hybrid
-
-    if years >= 7:
-        return "Hybrid"
-
-    elif years >= 3:
-        return "Remote"
-
-    else:
-        return "Onsite"
 
 
 def infer_industry(title):
@@ -306,11 +255,7 @@ def enrich_data(data):
         "job_title":
         title,
 
-        "company_type":
-        infer_company_type(
-            years,
-            title
-        ),
+
 
         "industry":
         infer_industry(title),
@@ -322,10 +267,12 @@ def enrich_data(data):
         ),
 
         "city":
-        "Unknown",
+        data.get(
+            "city",
+            "Unknown"
+        ) or "Unknown",
 
-        "remote_type":
-        infer_remote_type(years),
+
 
         "min_experience_years":
         years,
@@ -333,10 +280,102 @@ def enrich_data(data):
         "employment_type":
         "Full-time",
 
-        "company_size":
-        infer_company_size(
-            years,
-            title
+
+    }
+
+
+def list_value(data, key, fallback=None):
+
+    value = data.get(key, fallback or [])
+
+    if isinstance(value, list):
+        return [
+            str(item).strip()
+            for item in value
+            if str(item).strip()
+        ]
+
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+
+    return fallback or []
+
+
+def build_profile_details(raw_data, prediction_data):
+
+    years = prediction_data["min_experience_years"]
+
+    seniority = raw_data.get(
+        "seniority_level",
+        "Unknown"
+    )
+
+    if seniority == "Unknown":
+
+        if years >= 8:
+            seniority = "Lead"
+        elif years >= 5:
+            seniority = "Senior"
+        elif years >= 2:
+            seniority = "Mid-level"
+        else:
+            seniority = "Junior"
+
+    return {
+
+        "full_name":
+        raw_data.get(
+            "full_name",
+            "Unknown"
+        ),
+
+        "seniority_level":
+        seniority,
+
+        "city":
+        raw_data.get(
+            "city",
+            prediction_data.get("city", "Unknown")
+        ),
+
+        "skills":
+        list_value(raw_data, "skills"),
+
+        "education_level":
+        raw_data.get(
+            "education_level",
+            "Unknown"
+        ),
+
+        "certifications":
+        list_value(raw_data, "certifications"),
+
+        "languages":
+        list_value(raw_data, "languages"),
+
+        "strengths":
+        list_value(
+            raw_data,
+            "strengths",
+            [
+                "Experience aligned with data and AI roles",
+                "Profile contains enough structure for salary estimation"
+            ]
+        ),
+
+        "missing_keywords":
+        list_value(raw_data, "missing_keywords"),
+
+        "profile_summary":
+        raw_data.get(
+            "profile_summary",
+            "Profile extracted from the uploaded CV and prepared for salary estimation."
+        ),
+
+        "salary_reasoning":
+        raw_data.get(
+            "salary_reasoning",
+            "The salary estimate is based on the extracted role, experience level, country, company context, and market features used by the trained model."
         )
     }
 
@@ -548,6 +587,11 @@ async def analyze_cv(
 
     position = market_position(salary)
 
+    profile_details = build_profile_details(
+        raw_data,
+        data
+    )
+
     return {
 
         "extracted":
@@ -573,6 +617,9 @@ async def analyze_cv(
 
         "explanation":
         explanation,
+
+        "profile_details":
+        profile_details,
 
         "top_factors":
         contributions

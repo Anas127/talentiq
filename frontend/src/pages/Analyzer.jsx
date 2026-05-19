@@ -1,883 +1,439 @@
-import { useState } from "react";
-import { Upload, TrendingUp, Brain, Globe } from "lucide-react";
-
-import { motion } from "framer-motion";
-import { Link } from "react-router-dom";
-
+import { useMemo, useState } from "react";
 import {
-  ResponsiveContainer,
-  AreaChart,
+  AlertCircle,
+  BadgeDollarSign,
+  BarChart3,
+  BriefcaseBusiness,
+  CheckCircle2,
+  FileText,
+  GraduationCap,
+  Languages,
+  Loader2,
+  MapPin,
+  Sparkles,
+  Upload,
+} from "lucide-react";
+import { motion } from "framer-motion";
+import {
   Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  CartesianGrid,
 } from "recharts";
 
 import { analyzeCV, simulate } from "../services/api";
 
+const money = (value) =>
+  new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(Number(value || 0));
+
+const fallbackDetails = {
+  full_name: "Inconnu",
+  seniority_level: "Inconnu",
+  city: "Inconnu",
+  skills: [],
+  education_level: "Inconnu",
+  certifications: [],
+  languages: [],
+  strengths: [],
+  missing_keywords: [],
+  profile_summary:
+    "Importez un CV PDF lisible pour extraire un profil structuré et générer une estimation salariale.",
+  salary_reasoning:
+    "Le modèle utilise le poste extrait, l’expérience, le pays, le contexte de l’entreprise et les données du marché.",
+};
+
+function Logo() {
+  return (
+    <img src="/logo.png" alt="TalentIQ Logo" className="h-12 object-contain" />
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-[#e4e8ed] py-3 last:border-b-0">
+      <span className="text-sm text-[#657487]">{label}</span>
+      <span className="max-w-[60%] text-right text-sm font-semibold text-[#102a43]">
+        {value || "Inconnu"}
+      </span>
+    </div>
+  );
+}
+
+function PillList({ items, empty = "Aucune donnée extraite" }) {
+  if (!items?.length) {
+    return <p className="text-sm text-[#657487]">{empty}</p>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {items.slice(0, 12).map((item) => (
+        <span
+          key={item}
+          className="rounded-full border border-[#d9e1ea] bg-white px-3 py-1.5 text-sm font-medium text-[#27384a]"
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function Section({ icon: Icon, title, children }) {
+  return (
+    <section className="rounded-xl border border-[#dfe5ec] bg-white p-5 shadow-[0_10px_30px_rgba(16,42,67,0.05)]">
+      <div className="mb-4 flex items-center gap-3">
+        <div className="grid h-9 w-9 place-items-center rounded-lg bg-[#e8f4f0] text-[#0f766e]">
+          <Icon className="h-4 w-4" />
+        </div>
+        <h2 className="text-base font-semibold text-[#102a43]">{title}</h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function TrajectoryTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+
+  return (
+    <div className="rounded-lg border border-[#dfe5ec] bg-white px-4 py-3 shadow-lg">
+      <p className="text-xs font-medium uppercase tracking-[0.16em] text-[#657487]">
+        {label} ans
+      </p>
+      <p className="mt-1 text-lg font-semibold text-[#102a43]">
+        {money(payload[0].value)}
+      </p>
+    </div>
+  );
+}
+
 export default function Analyzer() {
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
-
   const [result, setResult] = useState(null);
   const [trajectory, setTrajectory] = useState([]);
-
   const [error, setError] = useState("");
 
-  // =========================
-  // HANDLE UPLOAD
-  // =========================
+  const details = useMemo(
+    () => ({ ...fallbackDetails, ...(result?.profile_details || {}) }),
+    [result],
+  );
+
+  const predictionData = result?.used_for_prediction || {};
 
   const handleUpload = async () => {
     if (!file) {
-      setError("Veuillez importer un CV PDF.");
+      setError("Veuillez d’abord importer un CV au format PDF.");
       return;
     }
 
     try {
       setError("");
       setLoading(true);
+      setTrajectory([]);
 
-      const res = await analyzeCV(file);
+      const analysis = await analyzeCV(file);
+      setResult(analysis.data);
+      localStorage.setItem("analysis_result", JSON.stringify(analysis.data));
 
-      setResult(res.data);
-      localStorage.setItem("analysis_result", JSON.stringify(res.data));
-
-      const sim = await simulate(res.data.used_for_prediction);
-
-      setTrajectory(sim.data.trajectory);
-      localStorage.setItem("trajectory", JSON.stringify(sim.data.trajectory));
+      const simulation = await simulate(analysis.data.used_for_prediction);
+      setTrajectory(simulation.data.trajectory || []);
+      localStorage.setItem(
+        "trajectory",
+        JSON.stringify(simulation.data.trajectory || []),
+      );
     } catch (err) {
       console.error(err);
-      setError("Échec de l’analyse du CV.");
+      setError(
+        err?.response?.data?.detail ||
+          "Échec de l’analyse du CV. Veuillez utiliser un PDF lisible contenant du texte.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div
-          className="
-        bg-white/95
-        backdrop-blur-xl
-        border border-black/[0.05]
-        rounded-2xl
-        px-4 py-3
-        shadow-xl
-      "
-        >
-          <p
-            className="
-          text-[13px]
-          text-black/45
-          mb-1
-        "
-          >
-            {label} ans d’expérience
-          </p>
-
-          <p
-            className="
-          text-[22px]
-          font-semibold
-          tracking-[-0.03em]
-        "
-          >
-            ${Math.round(payload[0].value).toLocaleString()}
-          </p>
-        </div>
-      );
-    }
-
-    return null;
-  };
-
   return (
-    <div className="min-h-screen bg-[#f6f6f3] text-[#111]">
-      {/* NAVBAR */}
-
-      <nav
-        className="
-        sticky top-0 z-50
-        backdrop-blur-xl
-        bg-white/70
-        border-b border-black/[0.04]
-      "
-      >
-        <div
-          className="
-          max-w-[1350px]
-          mx-auto
-          px-8
-          py-5
-          flex items-center justify-between
-        "
-        >
-          <h1
-            className="
-            text-[30px]
-            font-semibold
-            tracking-[-0.03em]
-          "
-          >
-            Quantiva AI
-          </h1>
-
-          <div
-            className="
-            flex items-center
-            gap-10
-            text-[15px]
-            text-black/55
-          "
-          >
-            <Link to="/" className="text-black font-medium">
-              Analyseur
-            </Link>
-
-            <Link to="/insights" className="hover:text-black transition">
-              Insights
-            </Link>
-
-            <button>Simulateur</button>
+    <div className="min-h-screen bg-[#f4f7f6] text-[#102a43]">
+      <header className="sticky top-0 z-40 border-b border-[#dfe5ec] bg-white/88 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1280px] items-center justify-between px-5 py-4 md:px-8">
+          <Logo />
+          <div className="hidden items-center gap-2 rounded-full border border-[#dfe5ec] bg-[#f7faf9] px-4 py-2 text-sm font-medium text-[#4f6073] sm:flex">
+            <Sparkles className="h-4 w-4 text-[#0f766e]" />
+            Analyse salariale propulsée par IA
           </div>
         </div>
-      </nav>
+      </header>
 
-      {/* HERO */}
-
-      <section
-        className="
-        max-w-[1350px]
-        mx-auto
-        px-8
-        pt-10
-      "
-      >
-        <motion.div
-          initial={{ opacity: 0, y: 15 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <h1
-            className="
-            text-[54px]
-            font-semibold
-            tracking-[-0.04em]
-            leading-[1]
-            max-w-4xl
-          "
+      <main className="mx-auto grid max-w-[1280px] gap-6 px-5 py-8 md:px-8 lg:grid-cols-[360px_1fr]">
+        <aside className="space-y-5">
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border border-[#dfe5ec] bg-white p-5 shadow-[0_12px_40px_rgba(16,42,67,0.06)]"
           >
-            Analyseur Intelligent de Salaire
-          </h1>
-
-          <p
-            className="
-            text-black/55
-            text-[18px]
-            mt-5
-            max-w-2xl
-            leading-relaxed
-          "
-          >
-            Importez votre CV pour une prédiction salariale alimentée par l’IA,
-            une analyse du marché, une évaluation du profil et une projection de
-            l’évolution salariale.
-          </p>
-        </motion.div>
-      </section>
-
-      {/* MAIN */}
-
-      <section
-        className="
-        max-w-[1350px]
-        mx-auto
-        px-8
-        py-6
-      "
-      >
-        <div
-          className="
-          grid
-          grid-cols-1
-          lg:grid-cols-[320px_1fr]
-          gap-6
-        "
-        >
-          {/* LEFT PANEL */}
-
-          <motion.div
-            whileHover={{ y: -2 }}
-            className="
-              bg-white
-              rounded-[30px]
-              border border-black/[0.04]
-              p-6
-              shadow-[0_10px_30px_rgba(0,0,0,0.03)]
-              h-fit
-            "
-          >
-            <div
-              className="
-              border border-dashed border-black/[0.08]
-              rounded-[24px]
-              min-h-[340px]
-              flex flex-col
-              items-center justify-center
-              text-center
-              px-8 py-10
-            "
-            >
-              {/* ICON */}
-
-              <div
-                className="
-                w-16 h-16
-                rounded-full
-                bg-blue-50
-                flex items-center justify-center
-                mb-5
-              "
-              >
-                <Upload
-                  className="
-                  w-7 h-7
-                  text-blue-600
-                "
-                />
+            <div className="rounded-xl border border-dashed border-[#b7c6d8] bg-[#f8fbfa] p-6">
+              <div className="grid h-12 w-12 place-items-center rounded-lg bg-[#dff3ec] text-[#0f766e]">
+                <Upload className="h-5 w-5" />
               </div>
 
-              {/* TITLE */}
-
-              <h2
-                className="
-                text-[36px]
-                font-semibold
-                tracking-[-0.04em]
-                leading-none
-              "
-              >
-                Importer un CV
-              </h2>
-
-              <p
-                className="
-                text-black/50
-                text-[15px]
-                mt-4
-                leading-relaxed
-                max-w-[280px]
-              "
-              >
-                Importez un CV PDF pour une analyse salariale, une évaluation du
-                profil et une intelligence du marché alimentée par l’IA.
+              <h1 className="mt-6 text-3xl font-semibold tracking-tight text-[#102a43]">
+                Analyser un CV
+              </h1>
+              <p className="mt-3 text-sm leading-6 text-[#5f6f7f]">
+                Importez un CV PDF pour obtenir une analyse intelligente du
+                profil, une estimation salariale et des insights carrière
+                avancés.
               </p>
-
-              {/* INPUT */}
 
               <input
                 id="cv-upload"
                 type="file"
                 accept=".pdf"
                 className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-
-                  if (f) {
-                    setFile(f);
+                onChange={(event) => {
+                  const selected = event.target.files?.[0];
+                  if (selected) {
+                    setFile(selected);
                     setError("");
                   }
                 }}
               />
 
-              {/* BUTTON */}
-
               <label
                 htmlFor="cv-upload"
-                className="
-                  mt-8
-                  bg-black
-                  text-white
-                  px-6 py-3
-                  rounded-2xl
-                  cursor-pointer
-                  hover:scale-[1.02]
-                  active:scale-[0.98]
-                  transition
-                  text-[15px]
-                  font-medium
-                "
+                className="mt-6 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#cfd9e5] bg-white px-4 py-3 text-sm font-semibold text-[#102a43] transition hover:border-[#0f766e] hover:text-[#0f766e]"
               >
-                Choisir un CV
+                <FileText className="h-4 w-4" />
+                Importer un CV PDF
               </label>
 
-              {/* FILE */}
-
               {file && (
-                <div
-                  className="
-                  mt-5
-                  text-[14px]
-                  text-black/55
-                  bg-black/[0.03]
-                  px-4 py-2
-                  rounded-xl
-                  max-w-full
-                  truncate
-                "
-                >
-                  {file.name}
+                <div className="mt-3 flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-[#4f6073]">
+                  <CheckCircle2 className="h-4 w-4 text-[#0f766e]" />
+                  <span className="truncate">{file.name}</span>
                 </div>
               )}
-
-              {/* ERROR */}
 
               {error && (
-                <div
-                  className="
-                  mt-4
-                  text-red-500
-                  text-sm
-                "
-                >
-                  {error}
+                <div className="mt-3 flex gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{error}</span>
                 </div>
               )}
-
-              {/* ANALYZE */}
 
               <button
                 onClick={handleUpload}
                 disabled={loading}
-                className={`
-                  mt-7
-                  px-7 py-3
-                  rounded-2xl
-                  transition
-                  font-medium
-                  text-[15px]
-                  ${
-                    loading
-                      ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                      : "bg-blue-600 text-white hover:bg-blue-700 hover:scale-[1.02]"
-                  }
-                `}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg bg-[#0f766e] px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#115e59] disabled:cursor-not-allowed disabled:bg-[#9bb7b3]"
               >
                 {loading ? (
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="
-        w-4 h-4
-        border-2
-        border-white/40
-        border-t-white
-        rounded-full
-        animate-spin
-      "
-                    ></div>
-
-                    <span>Analyse en cours...</span>
-                  </div>
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Analyse du CV en cours...
+                  </>
                 ) : (
-                  "Analyser le CV"
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Lancer l’analyse
+                  </>
                 )}
               </button>
             </div>
-          </motion.div>
+          </motion.section>
 
-          {/* RIGHT SIDE */}
+          <Section icon={BriefcaseBusiness} title="Données du modèle">
+            <InfoRow label="Poste" value={predictionData.job_title} />
+            <InfoRow
+              label="Expérience"
+              value={
+                predictionData.min_experience_years !== undefined
+                  ? `${predictionData.min_experience_years} ans`
+                  : "Inconnu"
+              }
+            />
+            <InfoRow label="Pays" value={predictionData.country} />
+          </Section>
+        </aside>
 
-          <div className="space-y-6">
-            {result && (
-              <>
-                {/* TOP GRID */}
-
-                <div
-                  className="
-                  grid
-                  grid-cols-1
-                  md:grid-cols-[1.6fr_0.8fr_1fr]
-                  gap-6
-                "
-                >
-                  {/* SALARY */}
-
-                  <motion.div
-                    whileHover={{ y: -2 }}
-                    className="
-                      bg-white
-                      rounded-[30px]
-                      border border-black/[0.04]
-                      p-8
-                      shadow-[0_10px_30px_rgba(0,0,0,0.03)]
-                    "
-                  >
-                    <p
-                      className="
-                      text-[11px]
-                      uppercase
-                      tracking-[0.22em]
-                      text-black/35
-                      mb-5
-                    "
-                    >
-                      Salaire Estimé
-                    </p>
-
-                    <h2
-                      className="
-                      text-[72px]
-                      font-semibold
-                      tracking-[-0.05em]
-                      leading-none
-                    "
-                    >
-                      ${Math.round(result.predicted_salary).toLocaleString()}
-                    </h2>
-
-                    <div
-                      className="
-                      mt-6
-                      flex items-center gap-2
-                      text-green-600
-                      text-sm
-                    "
-                    >
-                      <TrendingUp className="w-4 h-4" />
-                      Évaluation IA du marché
-                    </div>
-                  </motion.div>
-
-                  {/* SCORE */}
-
-                  <motion.div
-                    whileHover={{ y: -2 }}
-                    className="
-                      bg-white
-                      rounded-[30px]
-                      border border-black/[0.04]
-                      p-6
-                      shadow-[0_10px_30px_rgba(0,0,0,0.03)]
-                    "
-                  >
-                    <p
-                      className="
-                      text-[11px]
-                      uppercase
-                      tracking-[0.22em]
-                      text-black/35
-                    "
-                    >
-                      Score du Profil
-                    </p>
-
-                    <div className="mt-6">
-                      <h2
-                        className="
-                        text-[64px]
-                        font-semibold
-                        tracking-[-0.05em]
-                        leading-none
-                      "
-                      >
-                        {result.score}
-                        <p
-                          className="
-  text-[15px]
-  text-black/55
-  mt-2
-"
-                        >
-                          {result.score_label}
-                        </p>
-                      </h2>
-
-                      <p
-                        className="
-                        text-black/50
-                        mt-2
-                        text-[15px]
-                      "
-                      >
-                        {result.percentile} des profils
-                      </p>
-                    </div>
-
-                    <div
-                      className="
-                      mt-8
-                      h-2
-                      bg-black/[0.05]
-                      rounded-full
-                      overflow-hidden
-                    "
-                    >
-                      <div
-                        className="
-                        h-full
-                        bg-blue-600
-                        rounded-full
-                      "
-                        style={{
-                          width: `${result.score}%`,
-                        }}
-                      ></div>
-                    </div>
-                  </motion.div>
-
-                  {/* MARKET */}
-
-                  <motion.div
-                    whileHover={{ y: -2 }}
-                    className="
-                      bg-white
-                      rounded-[30px]
-                      border border-black/[0.04]
-                      p-6
-                      shadow-[0_10px_30px_rgba(0,0,0,0.03)]
-                    "
-                  >
-                    <p
-                      className="
-                      text-[11px]
-                      uppercase
-                      tracking-[0.22em]
-                      text-black/35
-                    "
-                    >
-                      Position Marché
-                    </p>
-
-                    <div
-                      className="
-                      flex items-start
-                      gap-4
-                      mt-8
-                    "
-                    >
-                      <div
-                        className="
-                        w-12 h-12
-                        rounded-2xl
-                        bg-blue-50
-                        flex items-center justify-center
-                        shrink-0
-                      "
-                      >
-                        <Globe
-                          className="
-                          text-blue-600
-                          w-5 h-5
-                        "
-                        />
-                      </div>
-
-                      <div>
-                        <h3
-                          className="
-                          text-[34px]
-                          font-semibold
-                          tracking-[-0.04em]
-                          leading-none
-                        "
-                        >
-                          {result.market_position}
-                        </h3>
-
-                        <p
-                          className="
-                          text-black/50
-                          text-[14px]
-                          mt-3
-                          leading-relaxed
-                        "
-                        >
-                          Basé sur les tendances actuelles du marché.
-                        </p>
-                      </div>
-                    </div>
-                  </motion.div>
-                </div>
-
-                {/* LOWER GRID */}
-
-                <div
-                  className="
-                  grid
-                  grid-cols-1
-                  lg:grid-cols-[1fr_1.1fr]
-                  gap-6
-                "
-                >
-                  {/* PROFILE */}
-
-                  <motion.div
-                    whileHover={{ y: -2 }}
-                    className="
-                      bg-white
-                      rounded-[30px]
-                      border border-black/[0.04]
-                      p-6
-                      shadow-[0_10px_30px_rgba(0,0,0,0.03)]
-                    "
-                  >
-                    <h2
-                      className="
-                      text-[32px]
-                      font-semibold
-                      tracking-[-0.04em]
-                      mb-8
-                    "
-                    >
-                      Profil Extrait
-                    </h2>
-
-                    <div className="space-y-6">
-                      <div className="flex justify-between">
-                        <span className="text-black/45">Poste</span>
-
-                        <span className="font-medium">
-                          {result.used_for_prediction.job_title}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between">
-                        <span className="text-black/45">Pays</span>
-
-                        <span className="font-medium">
-                          {result.used_for_prediction.country}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between">
-                        <span className="text-black/45">Expérience</span>
-
-                        <span className="font-medium">
-                          {result.used_for_prediction.min_experience_years} ans
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between">
-                        <span className="text-black/45">Taille Entreprise</span>
-
-                        <span className="font-medium">
-                          {result.used_for_prediction.company_size}
-                        </span>
-                      </div>
-                    </div>
-                  </motion.div>
-
-                  {/* EXPLANATION */}
-
-                  <motion.div
-                    whileHover={{ y: -2 }}
-                    className="
-                      bg-white
-                      rounded-[30px]
-                      border border-black/[0.04]
-                      p-6
-                      shadow-[0_10px_30px_rgba(0,0,0,0.03)]
-                    "
-                  >
-                    <div
-                      className="
-                      flex items-center
-                      gap-3
-                      mb-8
-                    "
-                    >
-                      <div
-                        className="
-                        w-11 h-11
-                        rounded-2xl
-                        bg-blue-50
-                        flex items-center justify-center
-                      "
-                      >
-                        <Brain
-                          className="
-                          text-blue-600
-                          w-5 h-5
-                        "
-                        />
-                      </div>
-
-                      <h2
-                        className="
-                        text-[32px]
-                        font-semibold
-                        tracking-[-0.04em]
-                      "
-                      >
-                        Analyse IA
-                      </h2>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-4">
-                      {result.explanation.map((item, index) => (
-                        <div
-                          key={index}
-                          className="
-                            bg-[#f8f8f7]
-                            border border-black/[0.04]
-                            rounded-2xl
-                            p-5
-                            transition
-                            hover:bg-white
-                          "
-                        >
-                          <div className="flex items-start gap-4">
-                            <div
-                              className="
-                                w-10 h-10
-                                rounded-xl
-                                bg-blue-50
-                                flex items-center justify-center
-                                shrink-0
-                              "
-                            >
-                              <Brain
-                                className="
-                                  text-blue-600
-                                  w-4 h-4
-                                "
-                              />
-                            </div>
-
-                            <div>
-                              <h3
-                                className="
-                                  text-[15px]
-                                  font-semibold
-                                  mb-1
-                                "
-                              >
-                                Insight IA
-                              </h3>
-
-                              <p
-                                className="
-                                  text-[14px]
-                                  text-black/60
-                                  leading-relaxed
-                                "
-                              >
-                                {item}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* CHART */}
-
-        {trajectory.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="
-              mt-4
-              bg-white
-              rounded-[34px]
-              border border-black/[0.04]
-              p-8
-              shadow-[0_10px_30px_rgba(0,0,0,0.03)]
-            "
+        <div className="space-y-6">
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="rounded-xl border border-[#dfe5ec] bg-[#102a43] p-6 text-white shadow-[0_18px_50px_rgba(16,42,67,0.16)]"
           >
-            <div className="mb-8">
-              <h2
-                className="
-                text-[44px]
-                font-semibold
-                tracking-[-0.04em]
-                leading-none
-              "
-              >
-                Projection d’Évolution Salariale
-              </h2>
+            <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+              <div>
+                <p className="text-sm font-medium uppercase tracking-[0.22em] text-[#9fd8ce]">
+                  Rapport d’analyse du CV
+                </p>
+                <h2 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tight md:text-5xl">
+                  {result
+                    ? details.full_name !== "Inconnu"
+                      ? details.full_name
+                      : predictionData.job_title
+                    : "Importez un CV pour générer un rapport complet du profil"}
+                </h2>
 
-              <p
-                className="
-                text-black/50
-                mt-3
-                text-[16px]
-              "
-              >
-                Projection de l’évolution salariale selon l’expérience
-                professionnelle.
+                <p className="mt-4 max-w-3xl text-base leading-7 text-[#d5e1ea]">
+                  {details.profile_summary}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-white/15 bg-white/8 p-5">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 place-items-center rounded-lg bg-[#9fd8ce] text-[#102a43]">
+                    <BadgeDollarSign className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-[#c4d3df]">Salaire estimé</p>
+                    <p className="text-4xl font-semibold tracking-tight">
+                      {result ? money(result.predicted_salary) : "$0"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <div className="rounded-lg bg-white/10 p-3">
+                    <p className="text-xs text-[#c4d3df]">Score du profil</p>
+                    <p className="mt-1 text-2xl font-semibold">
+                      {result?.score || "--"}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-white/10 p-3">
+                    <p className="text-xs text-[#c4d3df]">
+                      Position sur le marché
+                    </p>
+                    <p className="mt-1 text-sm font-semibold">
+                      {result?.market_position || "En attente"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.section>
+
+          <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+            <Section icon={Sparkles} title="Analyse salariale par IA">
+              <p className="text-sm leading-6 text-[#4f6073]">
+                {details.salary_reasoning}
               </p>
-            </div>
+              <div className="mt-4 space-y-3">
+                {(result?.explanation || []).map((item) => (
+                  <div
+                    key={item}
+                    className="flex gap-3 rounded-lg bg-[#f7faf9] p-3 text-sm leading-6 text-[#3c4f63]"
+                  >
+                    <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-[#0f766e]" />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </Section>
 
-            <div className="h-[320px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trajectory}>
-                  <defs>
-                    <linearGradient
-                      id="salaryGradient"
-                      x1="0"
-                      y1="0"
-                      x2="0"
-                      y2="1"
-                    >
-                      <stop
-                        offset="0%"
-                        stopColor="#2563eb"
-                        stopOpacity={0.22}
-                      />
+            <Section icon={MapPin} title="Profil extrait">
+              <InfoRow
+                label="Niveau d’expérience"
+                value={details.seniority_level}
+              />
+              <InfoRow label="Localisation" value={details.city} />
+              <InfoRow label="Formation" value={details.education_level} />
+              <InfoRow
+                label="Percentile"
+                value={result?.percentile || "En attente"}
+              />
+              <InfoRow label="Niveau du profil" value={result?.score_label} />
+            </Section>
+          </div>
 
-                      <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
+          <div className="grid gap-6 xl:grid-cols-3">
+            <Section icon={BarChart3} title="Compétences clés">
+              <PillList items={details.skills} />
+            </Section>
 
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ececec" />
+            <Section icon={GraduationCap} title="Points forts">
+              <PillList items={details.strengths} />
+            </Section>
 
-                  <XAxis
-                    dataKey="experience"
-                    axisLine={false}
-                    tickLine={false}
-                    stroke="#999"
-                    tickFormatter={(value) => `${value} ans`}
-                    label={{
-                      value: "Expérience",
-                      position: "insideBottom",
-                      offset: -5,
-                    }}
-                  />
+            <Section icon={Languages} title="Langues & Certifications">
+              <PillList
+                items={[...details.languages, ...details.certifications]}
+              />
+            </Section>
+          </div>
 
-                  <YAxis axisLine={false} tickLine={false} stroke="#999" />
+          <Section icon={AlertCircle} title="Mots-clés manquants">
+            <PillList
+              items={details.missing_keywords}
+              empty="Aucun mot-clé manquant n’a été identifié par l’IA."
+            />
+          </Section>
 
-                  <Tooltip
-                    content={<CustomTooltip />}
-                    cursor={{
-                      stroke: "#2563eb",
-                      strokeWidth: 1,
-                      strokeDasharray: "4 4",
-                    }}
-                  />
-
-                  <Area
-                    type="monotone"
-                    dataKey="salary"
-                    stroke="#2563eb"
-                    strokeWidth={4}
-                    fill="url(#salaryGradient)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </motion.div>
-        )}
-      </section>
+          {trajectory.length > 0 && (
+            <Section icon={BarChart3} title="Évolution estimée du salaire">
+              <p className="mb-5 text-sm leading-6 text-[#5f6f7f]">
+                Cette courbe conserve le contexte du profil extrait et estime
+                l’évolution du salaire à mesure que l’expérience augmente.
+              </p>
+              <div className="h-[320px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={trajectory}>
+                    <defs>
+                      <linearGradient
+                        id="salaryGradient"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="0%"
+                          stopColor="#0f766e"
+                          stopOpacity={0.24}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor="#0f766e"
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid stroke="#e6ebf0" strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="experience"
+                      axisLine={false}
+                      tickLine={false}
+                      stroke="#657487"
+                      tickFormatter={(value) => `${value}y`}
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      stroke="#657487"
+                      tickFormatter={(value) => `$${Math.round(value / 1000)}k`}
+                    />
+                    <Tooltip content={<TrajectoryTooltip />} />
+                    <Area
+                      type="monotone"
+                      dataKey="salary"
+                      stroke="#0f766e"
+                      strokeWidth={3}
+                      fill="url(#salaryGradient)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </Section>
+          )}
+        </div>
+      </main>
     </div>
   );
 }

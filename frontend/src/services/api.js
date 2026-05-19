@@ -14,5 +14,3 @@ export const analyzeCV = (file) => {
 export const simulate = (data) => {
   return API.post("/simulate", data);
 };
-
-export const getMarketInsights = () => API.get("/market-insights");
